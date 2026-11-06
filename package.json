@@ -1,0 +1,31 @@
+{
+  "name": "mivo",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w frontend",
+    "build": "npm run build -w frontend",
+    "typecheck": "npm run typecheck -w frontend",
+    "lint": "npm run lint -w frontend",
+    "test": ".venv/bin/python -m pytest backend/tests -q",
+    "test:e2e": "npm run test:e2e -w frontend",
+    "api": ".venv/bin/uvicorn backend.api.main:app --reload --host 127.0.0.1 --port 8137",
+    "db:migrate": ".venv/bin/alembic upgrade head",
+    "db:seed": ".venv/bin/python -m backend.seed",
+    "security": "npm audit --audit-level=moderate && .venv/bin/pip-audit",
+    "test:contracts": "forge test --root contracts -vv"
+  },
+  "overrides": {
+    "postcss": "8.5.32",
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.1"
+    }
+  },
+  "devDependencies": {
+    "@foundry-rs/anvil": "^1.7.1",
+    "@foundry-rs/forge": "^1.7.1",
+    "@openzeppelin/contracts": "^5.6.1"
+  }
+}

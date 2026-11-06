@@ -1,0 +1,14 @@
+{
+  "network": "local-anvil-only",
+  "chain_id": 31337,
+  "contract_address": "0x5e41b70fef0680edd597d4fa9f6cc7bfe2dca792",
+  "token_address": "0x1d972562dcc511a8819feb17c92a485be238973b",
+  "buyer_address": "0x677f24A555eCA45A85bc1dB1aAbE2EC04fB93553",
+  "merchant_address": "0x23CB15C32d933381c0ea784E1277B8400d519Af1",
+  "quote_hash": "0x23cab610014b00678af0a26d403f7492ecacee66c690c7be753b657b208514ff",
+  "token_amount": "129000000",
+  "nonce": "1",
+  "expires": 1793959040,
+  "transaction_hash": "0xbf3e829d215d0ec3e0a964acb5fe94adfeab6652af9633f8cbba7f9309ffbead",
+  "block_number": 5
+}

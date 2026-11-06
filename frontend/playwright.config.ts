@@ -1,0 +1,2 @@
+import {defineConfig} from '@playwright/test';
+export default defineConfig({testDir:'./tests',fullyParallel:false,workers:1,timeout:45000,use:{baseURL:'http://localhost:3137',headless:true,launchOptions:{executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'},screenshot:'only-on-failure'},webServer:[{command:'../.venv/bin/python ../scripts/e2e-server.py',url:'http://127.0.0.1:8137/health',reuseExistingServer:false,cwd:'.'},{command:'npm run dev -- --port 3137',url:'http://localhost:3137',reuseExistingServer:true,timeout:120000}]});

@@ -1,0 +1,6 @@
+export type User={id:string;name:string;email:string;role:'buyer'|'merchant'};
+export type Product={id:string;name:string;description:string;category:string;price_cents:number;inventory:number;image:string;merchant:string;merchant_id:string;floor_cents?:number};
+export type Deal={id:string;status:string;budget_cents:number;product:Product;messages:{id:string;sequence:number;role:string;text:string;merchant:string;created:number}[];offers:{id:string;amount_cents:number;expires:number;product:Product}[]};
+export type Quote={id:string;amount_cents:number;expires:number;status:string;product:Product;payment_enabled:boolean};
+export async function api<T>(path:string,body?:unknown,method?:string):Promise<T>{const response=await fetch('/api'+path,{credentials:'include',method:method??(body?'POST':'GET'),headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});if(!response.ok){const error=await response.json().catch(()=>({detail:'Request failed'}));throw new Error(typeof error.detail==='string'?error.detail:'Please check the supplied information.')}return response.json();}
+export const money=(cents:number)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:2}).format(cents/100);
