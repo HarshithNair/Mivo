@@ -23,6 +23,11 @@ class StartNegotiation(BaseModel):
     budget_cents: int = Field(gt=0, le=10000000, strict=True)
 class Proposal(BaseModel):
     amount_cents: int = Field(ge=1, le=10000000, strict=True)
+class DealerCounter(BaseModel):
+    dealer: int
+    amount_cents: int = Field(ge=1, le=10000000, strict=True)
+class DealerCounters(BaseModel):
+    counters: list[DealerCounter] = Field(default_factory=list, max_length=20)
 class SearchIntent(BaseModel):
     category: str | None = None
     budget_cents: int | None = Field(default=None, ge=1, le=10000000)

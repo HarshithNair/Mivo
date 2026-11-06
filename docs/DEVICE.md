@@ -35,8 +35,31 @@ Or use [`scripts/rpi_identify.py`](../scripts/rpi_identify.py) (stdlib only; `--
 ```
 `catalog_matches` are Mivo products whose name matches, so the device can hand off into a negotiation.
 
+## Negotiate: `?negotiate=true`
+
+`POST /api/device/identify?negotiate=true` (optional `&budget_usd=750`) does the identification above, then:
+
+1. Creates demo dealers (default 3, `DEVICE_DEALERS`) selling the identified product. Each gets a listing price around Gemini's price estimate and a private minimum below it. They are labelled `· Demo`, and their listings are hidden from the Discover catalog.
+2. Negotiates for `DEVICE_ROUNDS` rounds (default 2) on behalf of the buyer account in **`DEVICE_BUYER_EMAIL`**. To keep it fast and cheap, the buyer side is rule-based (opens at 75% of the cheapest listing, then moves halfway toward the best counter, never above budget) and **one Gemini call per round answers for all dealers**, each from its own listing, private minimum and previous counter only. Server rules keep every offer between the dealer's minimum and listing, and a dealer can never raise its price between rounds.
+3. Returns the best offer in the same response, under `negotiation`:
+
+```json
+"negotiation": {
+  "id": "…", "status": "completed", "budget_usd": 728.64,
+  "dealers": [{"name": "Urban Gadget Hub · Demo", "listing_usd": 857.22}],
+  "best_offer": {"dealer": "Urban Gadget Hub · Demo", "price_usd": 761.94, "listing_usd": 857.22, "savings_usd": 95.28, "expires_at": 1793996146},
+  "offers": [ "…all offers, cheapest first…" ],
+  "deal_room_url": "https://<your-app>/deal-room?id=…"
+}
+```
+`status` is `completed`, `failed` (no valid offers), or `skipped`, with a `reason` when nothing was recognised or no price estimate was available.
+
+Without `budget_usd`, the budget is 85% of the cheapest dealer listing. The negotiation is stored like any other: log in on the website as `DEVICE_BUYER_EMAIL` to see it in **My Deals / Deal Room** and to **accept** an offer (offers expire after 10 minutes; nothing is accepted automatically).
+
+Cost and time: **1 identification call + 1 call per round = 3 Gemini calls** by default (measured live: 37.6 s). Website negotiations still use the per-agent engine. Set the client timeout to ~290 s anyway, since Gemini retries can stretch a run. When Google Search grounding returns a quota error, the server skips search attempts for the next 10 minutes instead of spending a call slot on them. A new scan of the same product retires the previous scan's demo dealers. At most 2 negotiations can run at once per buyer (`429` otherwise).
+
 ## Errors
-`401` wrong/missing key · `413` image > 4 MB · `415` not a JPEG/PNG/WebP (checked by file signature) · `429` rate limited · `502` Gemini failed or quota exhausted · `503` `DEVICE_API_KEY` or `GEMINI_API_KEY` not set.
+`401` wrong/missing key · `422` invalid `budget_usd` · `413` image > 4 MB · `415` not a JPEG/PNG/WebP (checked by file signature) · `429` rate limited · `502` Gemini failed or quota exhausted · `503` `DEVICE_API_KEY` or `GEMINI_API_KEY` not set, or (with `negotiate`) `DEVICE_BUYER_EMAIL` missing or not a buyer account.
 
 ## Notes
 - **`web_search`:** Google Search grounding has a much smaller free-tier quota than plain Gemini calls. When it is exhausted (429), the server identifies the product from the model's own knowledge instead and returns `"web_search": false` with empty `sources`. Identification still works, but prices and retailers may be out of date.

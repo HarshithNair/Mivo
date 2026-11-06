@@ -1,6 +1,6 @@
 import time
 import uuid
-from sqlalchemy import ForeignKey, String, Integer, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, String, Integer, Text, UniqueConstraint, Boolean, true
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 def uid(): return str(uuid.uuid4())
@@ -33,6 +33,8 @@ class Product(Base):
     floor_cents: Mapped[int] = mapped_column(Integer)
     inventory: Mapped[int] = mapped_column(Integer, default=10)
     image: Mapped[str] = mapped_column(String(100), default='/headphones.svg')
+    # False for demo-dealer listings generated from device scans: negotiable, but kept out of the catalog.
+    listed: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
 
 class Negotiation(Base):
     __tablename__ = 'negotiations'
