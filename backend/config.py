@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -22,5 +23,31 @@ class Settings(BaseSettings):
     world_client_secret: str = ''
     world_sandbox: bool = True
     world_required: bool = False
+    # Set automatically by Vercel. VERCEL=1 switches to serverless behaviour.
+    vercel: bool = False
+    vercel_url: str = ''
+    vercel_branch_url: str = ''
+    vercel_project_production_url: str = ''
+
+    @model_validator(mode='after')
+    def serverless_defaults(self):
+        if self.vercel:
+            if self.app_origin == 'http://localhost:3000' and self.vercel_project_production_url:
+                self.app_origin = 'https://' + self.vercel_project_production_url
+            self.cookie_secure = True
+        return self
+
+    @property
+    def allowed_origins(self):
+        # Production origin plus this deployment's own preview URLs.
+        extra = {'https://' + u for u in (self.vercel_url, self.vercel_branch_url) if u}
+        return {self.app_origin, *extra}
+
+    @property
+    def sqlalchemy_url(self):
+        url = self.database_url
+        for prefix in ('postgres://', 'postgresql://'):
+            if url.startswith(prefix): return 'postgresql+psycopg://' + url[len(prefix):]
+        return url
 
 settings = Settings()

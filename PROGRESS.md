@@ -24,7 +24,7 @@
 - **Arc funding.** Deployer `0x677f24A555eCA45A85bc1dB1aAbE2EC04fB93553` has a zero balance, so no contract deployment or on-chain settlement is possible. Needs faucet funding (https://faucet.circle.com).
 - **World credentials.** No developer app exists, so `WORLD_CLIENT_ID`/`WORLD_CLIENT_SECRET` are empty and `/world/start` correctly returns 503.
 - **1inch.** Now definitively resolved against official docs: Aqua runs on 13 mainnet chains and **no testnets**, and Arc (5042002) is not one of them. A 1inch conversion settled on Arc is not technically possible. Demonstrating Aqua at all would need a mainnet chain and real funds — an unauthorized financial commitment. Conversion stays disabled.
-- **Hosting.** No deployment. Needs an authorized Python host plus persistent database, or approval to adapt the stack.
+- **Hosting.** Stack adapted for Vercel (Services + Postgres); see [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Known wrinkle, not yet changed
 Final-round offers are persisted even when above the buyer's stated budget (one offer came back at $141.00 against a $140.00 budget). Merchant floors are still enforced and the buyer must accept explicitly, so this is a comparison/UX question rather than a safety one. Flagged rather than silently changed.

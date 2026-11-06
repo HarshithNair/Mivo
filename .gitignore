@@ -17,3 +17,4 @@ contracts/cache/
 .DS_Store
 *.tsbuildinfo
 .test/
+.vercel/

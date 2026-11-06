@@ -9,7 +9,7 @@ Requires Node 24, Python 3.11+.
 ```sh
 npm ci
 python3 -m venv .venv
-.venv/bin/pip install -r backend/requirements.txt
+.venv/bin/pip install -r backend/requirements-dev.txt
 npm run db:migrate
 npm run db:seed
 npm run api
@@ -28,4 +28,4 @@ npm run test:e2e
 npm run security
 ```
 
-See [PROGRESS.md](PROGRESS.md) for verified status, [architecture](docs/ARCHITECTURE.md) for trust boundaries, and [integrations](docs/INTEGRATIONS.md) for external setup. Payment is intentionally disabled until deployed contracts, authorization issuance and receipt reconciliation are connected and tested. This is not a production-ready or fully integrated application yet.
+See [PROGRESS.md](PROGRESS.md) for verified status, [architecture](docs/ARCHITECTURE.md) for trust boundaries, and [integrations](docs/INTEGRATIONS.md) for external setup, and [deploy](docs/DEPLOY.md) for Vercel hosting. Payment is intentionally disabled until deployed contracts, authorization issuance and receipt reconciliation are connected and tested. This is not a production-ready or fully integrated application yet.
