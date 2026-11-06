@@ -28,4 +28,4 @@ npm run test:e2e
 npm run security
 ```
 
-See [PROGRESS.md](PROGRESS.md) for verified status, [architecture](docs/ARCHITECTURE.md) for trust boundaries, and [integrations](docs/INTEGRATIONS.md) for external setup, [deploy](docs/DEPLOY.md) for Vercel hosting, and [device](docs/DEVICE.md) for Raspberry Pi image identification. Payment is intentionally disabled until deployed contracts, authorization issuance and receipt reconciliation are connected and tested. This is not a production-ready or fully integrated application yet.
+See [PROGRESS.md](PROGRESS.md) for verified status, [architecture](docs/ARCHITECTURE.md) for trust boundaries, and [integrations](docs/INTEGRATIONS.md) for external setup, [deploy](docs/DEPLOY.md) for Vercel hosting, and [device](docs/DEVICE.md) for Raspberry Pi image identification ([Pi build brief](docs/RPI_CLIENT_BRIEF.md)). Payment is intentionally disabled until deployed contracts, authorization issuance and receipt reconciliation are connected and tested. This is not a production-ready or fully integrated application yet.
