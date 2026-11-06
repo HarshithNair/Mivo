@@ -17,11 +17,16 @@ from backend.api.world import router as world_router
 from backend.services.payments import enabled as payment_enabled
 
 tasks=set()
+def expire_stale(db):
+    cutoff=now()-settings.negotiation_deadline-60
+    db.execute(update(Negotiation).where(Negotiation.status.in_(['running','pending']),Negotiation.created<cutoff).values(status='failed')); db.commit()
 @asynccontextmanager
 async def lifespan(app):
     # Interrupted jobs fail visibly; never manufacture offers after restart.
+    # On serverless, other instances may be mid-negotiation, so only fail stale jobs.
     with SessionLocal() as db:
-        db.execute(update(Negotiation).where(Negotiation.status.in_(['running','pending'])).values(status='failed')); db.commit()
+        if settings.vercel: expire_stale(db)
+        else: db.execute(update(Negotiation).where(Negotiation.status.in_(['running','pending'])).values(status='failed')); db.commit()
     yield
     for task in tasks: task.cancel()
     await asyncio.gather(*tasks,return_exceptions=True)
@@ -31,7 +36,7 @@ app.include_router(world_router)
 
 @app.middleware('http')
 async def guard(request, call_next):
-    if request.method not in ('GET','HEAD','OPTIONS') and request.headers.get('origin') != settings.app_origin:
+    if request.method not in ('GET','HEAD','OPTIONS') and request.headers.get('origin') not in settings.allowed_origins:
         return Response('Invalid request origin',status_code=403)
     response=await call_next(request)
     response.headers['X-Content-Type-Options']='nosniff'
@@ -143,16 +148,29 @@ async def start(body:StartNegotiation,request:Request,user=Depends(current_user)
     if not settings.gemini_api_key: raise HTTPException(503,'Connect Gemini to start real AI negotiations.')
     product=db.get(Product,body.product_id)
     if not product or product.inventory<1: raise HTTPException(404,'Product unavailable')
+    expire_stale(db)
     active=db.scalar(select(func.count()).select_from(Negotiation).where(Negotiation.buyer_id==user.id,Negotiation.status.in_(['pending','running'])))
     if active>=2: raise HTTPException(429,'Finish or cancel an active negotiation first')
     n=Negotiation(buyer_id=user.id,product_id=product.id,budget_cents=body.budget_cents); db.add(n); db.commit()
+    if settings.vercel:
+        # Serverless functions freeze after responding, so the client drives the run via /run.
+        return {'id':n.id,'run':True}
     task=asyncio.create_task(run_negotiation(n.id)); tasks.add(task); task.add_done_callback(tasks.discard)
-    return {'id':n.id}
+    return {'id':n.id,'run':False}
+@app.post('/negotiations/{nid}/run')
+async def run(nid:str,user=Depends(current_user),db=Depends(get_db)):
+    n=db.get(Negotiation,nid)
+    if not n or n.buyer_id!=user.id: raise HTTPException(404,'Negotiation not found')
+    # run_negotiation atomically claims pending jobs, so repeated calls are harmless.
+    # Shield it so a dropped client connection does not abandon a negotiation mid-round.
+    await asyncio.shield(run_negotiation(nid))
+    db.expire_all(); return {'status':db.get(Negotiation,nid).status}
 @app.get('/negotiations')
 def negotiations(user=Depends(current_user),db=Depends(get_db)):
     return [negotiation_data(n,db) for n in db.scalars(select(Negotiation).where(Negotiation.buyer_id==user.id).order_by(Negotiation.created.desc()).limit(50))]
 @app.get('/negotiations/{nid}')
 def negotiation(nid:str,user=Depends(current_user),db=Depends(get_db)):
+    expire_stale(db)
     n=db.get(Negotiation,nid)
     if not n or n.buyer_id!=user.id: raise HTTPException(404,'Negotiation not found')
     return negotiation_data(n,db)
@@ -185,7 +203,7 @@ def quote(qid:str,user=Depends(current_user),db=Depends(get_db)):
     return {'id':q.id,'amount_cents':q.amount_cents,'expires':q.expires,'status':'expired' if q.expires<=now() and q.status!='paid' else q.status,'product':product_data(db.get(Product,o.product_id),db),'payment_enabled':payment_enabled()}
 @app.websocket('/ws/negotiations/{nid}')
 async def live(ws:WebSocket,nid:str):
-    if ws.headers.get('origin')!=settings.app_origin: await ws.close(code=1008); return
+    if ws.headers.get('origin') not in settings.allowed_origins: await ws.close(code=1008); return
     with SessionLocal() as db:
         s=db.get(Session,token_hash(ws.cookies.get('mivo_session','')))
         n=db.get(Negotiation,nid)
