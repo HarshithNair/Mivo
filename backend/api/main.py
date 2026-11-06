@@ -42,11 +42,19 @@ app.include_router(payments_router)
 app.include_router(world_router)
 app.include_router(device_router)
 
+def origin_allowed(headers):
+    origin=headers.get('origin')
+    if origin in settings.allowed_origins: return True
+    # On Vercel the frontend and API share one domain, and a project answers on several
+    # (production alias, team alias, custom domains). Same-origin means the browser's Origin
+    # matches the host the request arrived on; the edge sets that host, not the page.
+    host=headers.get('x-forwarded-host') or headers.get('host')
+    return settings.vercel and bool(origin and host) and origin=='https://'+host.split(',')[0].strip()
 @app.middleware('http')
 async def guard(request, call_next):
     # /device/* is called by hardware, not browsers: no cookies are used there, so it is
     # authenticated by a bearer key instead of the browser Origin check.
-    if request.method not in ('GET','HEAD','OPTIONS') and not request.url.path.startswith('/device/') and request.headers.get('origin') not in settings.allowed_origins:
+    if request.method not in ('GET','HEAD','OPTIONS') and not request.url.path.startswith('/device/') and not origin_allowed(request.headers):
         return Response('Invalid request origin',status_code=403)
     response=await call_next(request)
     response.headers['X-Content-Type-Options']='nosniff'
@@ -220,7 +228,7 @@ def quote(qid:str,user=Depends(current_user),db=Depends(get_db)):
     return {'id':q.id,'amount_cents':q.amount_cents,'expires':q.expires,'status':'expired' if q.expires<=now() and q.status!='paid' else q.status,'product':product_data(db.get(Product,o.product_id),db),'payment_enabled':payment_enabled()}
 @app.websocket('/ws/negotiations/{nid}')
 async def live(ws:WebSocket,nid:str):
-    if ws.headers.get('origin') not in settings.allowed_origins: await ws.close(code=1008); return
+    if not origin_allowed(ws.headers): await ws.close(code=1008); return
     with SessionLocal() as db:
         s=db.get(Session,token_hash(ws.cookies.get('mivo_session','')))
         n=db.get(Negotiation,nid)
