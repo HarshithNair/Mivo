@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     world_client_secret: str = ''
     world_sandbox: bool = True
     world_required: bool = False
+    # Shared secret the Raspberry Pi sends as 'Authorization: Bearer <key>'. Empty disables /device.
+    device_api_key: str = ''
     # Set automatically by Vercel. VERCEL=1 switches to serverless behaviour.
     vercel: bool = False
     vercel_url: str = ''
