@@ -16,6 +16,7 @@ from backend.agents.gemini import search_intent
 from backend.api.payments import router as payments_router
 from backend.api.world import router as world_router
 from backend.api.device import router as device_router
+from backend.buy_payments.api import router as buy_router
 from backend.services.payments import enabled as payment_enabled
 
 log=logging.getLogger('mivo.api')
@@ -41,6 +42,7 @@ app=FastAPI(title='Mivo API',version='0.1.0',lifespan=lifespan)
 app.include_router(payments_router)
 app.include_router(world_router)
 app.include_router(device_router)
+app.include_router(buy_router)
 
 def origin_allowed(headers):
     origin=headers.get('origin')
