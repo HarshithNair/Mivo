@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -17,6 +18,7 @@ from backend.api.world import router as world_router
 from backend.api.device import router as device_router
 from backend.services.payments import enabled as payment_enabled
 
+log=logging.getLogger('mivo.api')
 tasks=set()
 def expire_stale(db):
     cutoff=now()-settings.negotiation_deadline-60
@@ -25,9 +27,13 @@ def expire_stale(db):
 async def lifespan(app):
     # Interrupted jobs fail visibly; never manufacture offers after restart.
     # On serverless, other instances may be mid-negotiation, so only fail stale jobs.
-    with SessionLocal() as db:
-        if settings.vercel: expire_stale(db)
-        else: db.execute(update(Negotiation).where(Negotiation.status.in_(['running','pending'])).values(status='failed')); db.commit()
+    try:
+        with SessionLocal() as db:
+            if settings.vercel: expire_stale(db)
+            else: db.execute(update(Negotiation).where(Negotiation.status.in_(['running','pending'])).values(status='failed')); db.commit()
+    except Exception:
+        # Keep serving so /health can report the problem instead of every request crashing.
+        log.exception('startup database cleanup failed')
     yield
     for task in tasks: task.cancel()
     await asyncio.gather(*tasks,return_exceptions=True)
@@ -69,8 +75,15 @@ def issue_session(user,db,response):
     return public_user(user)
 
 @app.get('/health')
-def health(db=Depends(get_db)):
-    db.execute(select(1)); return {'status':'ok','gemini_configured':bool(settings.gemini_api_key),'settlement_enabled':payment_enabled()}
+def health(response:Response,db=Depends(get_db)):
+    body={'status':'ok','database':db.get_bind().dialect.name,'gemini_configured':bool(settings.gemini_api_key),'device_configured':bool(settings.device_api_key),'settlement_enabled':payment_enabled()}
+    try:
+        db.execute(select(1)); body['seeded_products']=db.scalar(select(func.count()).select_from(Product))
+    except Exception as exc:
+        # Report only the error class: messages can contain connection strings.
+        db.rollback(); log.exception('health check failed'); response.status_code=503
+        body.update(status='error',error=type(exc).__name__)
+    return body
 @app.post('/auth/register',status_code=201)
 def register(body:Registration,request:Request,response:Response,db=Depends(get_db)):
     rate_limit(request)
