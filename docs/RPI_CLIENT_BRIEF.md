@@ -77,6 +77,10 @@ curl -sS --max-time 120 -X POST "$MIVO_URL/api/device/identify" \
 
 Treat every field as possibly `null`/empty; never crash on a missing value.
 
+## 4b. Negotiating: `?negotiate=true`
+
+Add `?negotiate=true` (and optionally `&budget_usd=750`) to the URL to also have Mivo haggle with demo dealers. The reply then includes a `negotiation` object with `status`, `best_offer` (`dealer`, `price_usd`, `listing_usd`, `savings_usd`), all `offers`, and a `deal_room_url` where the owner accepts the deal on the website. This takes 2–4 minutes, so use a **290-second timeout** and do not retry a 429 automatically. Full field list: `docs/DEVICE.md` in the repo.
+
 ## 5. Errors: what to do
 
 Error bodies are usually JSON (`{"detail": "message"}`), but very large uploads or hosting-level failures can return plain text, so parse defensively.

@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     world_required: bool = False
     # Shared secret the Raspberry Pi sends as 'Authorization: Bearer <key>'. Empty disables /device.
     device_api_key: str = ''
+    # Buyer account that owns negotiations started from the device (shown on the website for that login).
+    device_buyer_email: str = ''
+    device_dealers: int = 3
     # Set automatically by Vercel. VERCEL=1 switches to serverless behaviour.
     vercel: bool = False
     vercel_url: str = ''

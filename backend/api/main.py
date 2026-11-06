@@ -117,7 +117,7 @@ def me(user=Depends(current_user)): return public_user(user)
 
 @app.get('/products')
 def products(q:str='',category:str='',max_price:int|None=None,db=Depends(get_db)):
-    statement=select(Product).where(Product.inventory>0)
+    statement=select(Product).where(Product.inventory>0,Product.listed.is_(True))
     if q: statement=statement.where(or_(Product.name.ilike(f'%{q[:100]}%'),Product.description.ilike(f'%{q[:100]}%')))
     if category: statement=statement.where(Product.category==category)
     if max_price is not None: statement=statement.where(Product.price_cents<=max_price)
@@ -128,7 +128,7 @@ async def search(body:SearchRequest,request:Request,db=Depends(get_db),user=Depe
     if not settings.gemini_api_key: raise HTTPException(503,'AI search requires Gemini configuration. Catalog search remains available.')
     try: intent=await search_intent(body.query)
     except Exception: raise HTTPException(502,'AI search unavailable; try catalog search')
-    statement=select(Product).where(Product.inventory>0)
+    statement=select(Product).where(Product.inventory>0,Product.listed.is_(True))
     if intent.category: statement=statement.where(Product.category==intent.category)
     if intent.budget_cents: statement=statement.where(Product.price_cents<=intent.budget_cents)
     for term in intent.brands+intent.features:
