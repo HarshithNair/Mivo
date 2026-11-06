@@ -17,7 +17,7 @@ Quota headroom, not code, is now the limiting factor. Raising it means enabling 
 
 ## Arc
 Verified official network docs: https://docs.arc.io/arc/references/connect-to-arc
-Testnet chain ID 5042002, RPC https://rpc.testnet.arc.io, explorer https://explorer.testnet.arc.io. Faucet: https://faucet.circle.com
+Testnet chain ID 5042002, RPC https://rpc.testnet.arc.io (the current official docs use https://rpc.testnet.arc.network; both endpoints were tested and return the same chain ID). Explorer https://explorer.testnet.arc.io. Faucet: https://faucet.circle.com
 
 Verified directly against the live RPC on 6 November 2026:
 - `eth_chainId` returns `0x4cef52` (5042002), matching `arc_chain_id`.
@@ -26,10 +26,17 @@ Verified directly against the live RPC on 6 November 2026:
 
 Still blocked: the dedicated deployer wallet `0x677f24A555eCA45A85bc1dB1aAbE2EC04fB93553` holds a zero balance, so no contract can be deployed and no settlement can be submitted. This needs testnet funding from the faucet, which requires the user. `payment_enabled()` additionally requires `SETTLEMENT_CONTRACT`, so checkout stays correctly disabled until a real deployment exists. Dedicated testnet wallet only; personal wallets and real funds are excluded. No Arc deployment or payment is claimed.
 
-## 1inch
+## 1inch — determined unavailable on Arc, 6 November 2026
 Official Mumbai requirements: https://ethglobal.com/events/mumbai/prizes
-Aqua/SwapVM contracts and demonstrated on-chain token transfers required; a generic swap API is insufficient. Sources: https://github.com/1inch/aqua and https://github.com/1inch/swap-vm
-Arc compatibility and genuine conversion route have not been verified. Conversion remains disabled, without fabricated quotes or cross-chain atomicity claims.
+Sources: https://business.1inch.com/portal/documentation/aqua/liquidity-layer/supported-chains, https://github.com/1inch/aqua, https://github.com/1inch/swap-vm
+
+The official Aqua supported-chains page states `supportedChains = [1, 10, 56, 100, 130, 137, 146, 324, 4663, 8453, 42161, 43114, 59144]` — 13 chains: Ethereum, Optimism, BNB Chain, Gnosis, Unichain, Polygon, Sonic, zkSync Era, Robinhood Chain, Base, Arbitrum, Avalanche, Linea.
+
+Two consequences, both verified rather than assumed:
+- Arc testnet (5042002) is **not** an Aqua chain. A 1inch Aqua conversion settled on Arc is therefore not technically possible, and any such flow in this app would be fabricated.
+- Aqua lists **no testnets at all**. Demonstrating a genuine Aqua conversion would require a mainnet chain and real funds, which is a financial commitment that has not been authorized.
+
+Conversion therefore remains disabled, with no fabricated quotes and no cross-chain atomicity claims. The checkout UI states plainly that 1inch conversion is not enabled. Direct Arc stablecoin settlement is independent of this and is unaffected.
 
 ## World
 Official Agent Pass portal: https://auth.world.org/portal
