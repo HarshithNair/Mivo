@@ -238,3 +238,15 @@ def test_evidence_is_sanitized_and_hash_checked(api):
     assert api.post(f'/device/zerog/evidence/{nid}/stored', headers=h, json={**good, 'content_hash': '0x' + 'c' * 64}).status_code == 409
     assert api.post(f'/device/zerog/evidence/{nid}/stored', headers=h, json=good).status_code == 200
     with SessionLocal() as db: assert db.scalar(select(ZeroGEvidence).where(ZeroGEvidence.negotiation_id == nid)).root_hash == '0x' + 'a' * 64
+
+
+def test_engine_is_wired_and_sets_session_itself(zg, monkeypatch):
+    assert engine.dealer_counters is agents.dealer_counters and engine.merchant_proposal is agents.merchant_proposal
+    with SessionLocal() as db:
+        u = User(email='zg3@example.com', name='ZG', role='buyer', password_hash='x'); db.add(u); db.flush()
+        products = list(db.scalars(select(Product).where(Product.name == 'Studio ANC Headphones')))
+        n = Negotiation(buyer_id=u.id, product_id=products[0].id, budget_cents=12500); db.add(n); db.commit()
+        nid, ids = n.id, [p.id for p in products]
+    mock_router(monkeypatch, [ok(json.dumps({'counters': [{'dealer': i, 'decision': 'counter', 'concession': 0.5} for i in range(len(ids))]}), request_id='req-wired')])
+    asyncio.run(engine.run_device_negotiation(nid, ids, rounds=1))  # no manual session: the engine sets it
+    assert [d.request_id for d in decisions(nid)] == ['req-wired']

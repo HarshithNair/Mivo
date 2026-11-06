@@ -3,7 +3,7 @@ import logging
 from sqlalchemy import select, update, func
 from backend.db import SessionLocal
 from backend.models import Negotiation, Product, Message, Offer, Audit, now
-from backend.agents.gemini import buyer_proposal, merchant_proposal, dealer_counters
+from backend.integrations.zerog.agents import buyer_proposal, merchant_proposal, dealer_counters, negotiation_session
 from backend.config import settings
 
 MAX_ROUNDS = settings.negotiation_rounds
@@ -23,6 +23,7 @@ async def run_negotiation(nid):
         claimed = db.execute(update(Negotiation).where(Negotiation.id==nid, Negotiation.status=='pending').values(status='running'))
         db.commit()
         if claimed.rowcount != 1: return
+        negotiation_session.set(nid)
         n = db.get(Negotiation,nid)
         original = db.get(Product,n.product_id)
         products = list(db.scalars(select(Product).where(Product.name==original.name,Product.inventory>0)))[:5]
@@ -80,6 +81,7 @@ async def run_device_negotiation(nid, product_ids, rounds=None):
         claimed = db.execute(update(Negotiation).where(Negotiation.id==nid, Negotiation.status=='pending').values(status='running'))
         db.commit()
         if claimed.rowcount != 1: return
+        negotiation_session.set(nid)
         n = db.get(Negotiation,nid)
         products = [p for p in (db.get(Product,i) for i in product_ids) if p and p.inventory>0]
         last = {p.id: p.price_cents for p in products}  # each dealer's latest counter (starts at listing)
