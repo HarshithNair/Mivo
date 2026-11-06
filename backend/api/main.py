@@ -14,6 +14,7 @@ from backend.services.negotiation import run_negotiation
 from backend.agents.gemini import search_intent
 from backend.api.payments import router as payments_router
 from backend.api.world import router as world_router
+from backend.api.device import router as device_router
 from backend.services.payments import enabled as payment_enabled
 
 tasks=set()
@@ -33,10 +34,13 @@ async def lifespan(app):
 app=FastAPI(title='Mivo API',version='0.1.0',lifespan=lifespan)
 app.include_router(payments_router)
 app.include_router(world_router)
+app.include_router(device_router)
 
 @app.middleware('http')
 async def guard(request, call_next):
-    if request.method not in ('GET','HEAD','OPTIONS') and request.headers.get('origin') not in settings.allowed_origins:
+    # /device/* is called by hardware, not browsers: no cookies are used there, so it is
+    # authenticated by a bearer key instead of the browser Origin check.
+    if request.method not in ('GET','HEAD','OPTIONS') and not request.url.path.startswith('/device/') and request.headers.get('origin') not in settings.allowed_origins:
         return Response('Invalid request origin',status_code=403)
     response=await call_next(request)
     response.headers['X-Content-Type-Options']='nosniff'
