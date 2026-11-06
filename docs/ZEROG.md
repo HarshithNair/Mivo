@@ -26,7 +26,7 @@ Database: `.venv/bin/alembic upgrade head` (migration `006`: `zerog_decisions`, 
 ZEROG_API_KEY=sk-… .venv/bin/python scripts/zerog_live_check.py     # real inference + a real negotiation on a scratch DB
 cd integrations/zerog/storage && npm install
 node new-wallet.mjs                                                   # dedicated storage-fee wallet; fund it from the 0G faucet
-MIVO_URL=https://… MIVO_DEVICE_KEY=… node upload-evidence.mjs <negotiation_id>
+MIVO_URL=https://… MIVO_DEVICE_KEY=… node upload-evidence.mjs <negotiation_id>   # local API: run `uvicorn backend.vercel_app:app` so /api/... paths match production
 node verify.mjs <root_hash> <sha256>                                  # independent download + proof + hash check
 ```
 
@@ -38,3 +38,9 @@ node verify.mjs <root_hash> <sha256>                                  # independ
 | `GET /api/negotiations/{id}/zerog/evidence` | owner | 0G Storage root hashes |
 | `GET /api/device/zerog/evidence/{id}` | device key | sanitized evidence + canonical bytes + sha256 |
 | `POST /api/device/zerog/evidence/{id}/stored` | device key | record a root hash; accepted only when verified and the hash matches |
+
+## Verified run (0G Galileo testnet, chain 16602)
+Real negotiation `9b321314-5f98-47e5-a120-11eaffa799b5` (scratch DB, Gemini decisions), 1,261-byte sanitized evidence:
+- root `0xc6ccec2fa1932885478f71f32e501b45c2f3b67a55686e361e30964a248a8940`
+- tx `0xd3859a1c3b2a669e923124d0cb3249552f5c43090880a92ef30975b768e34716` (success, block 64,250,466, flow contract `0x22E03a6A89B950F1c82ec5e74F8eCa321a105296`, fee 0.00124 0G)
+- downloaded from 0G storage nodes with Merkle proof, twice; sha256 `0xa88e56370a85083f86c6da6e02aa9baac10950061b9b1759501ff3d0630b0fd3` matched both times
