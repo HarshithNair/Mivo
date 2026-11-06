@@ -43,6 +43,7 @@ async def identify(request: Request, db=Depends(get_db)):
     if not image.startswith(SIGNATURES[mime]) or (mime == 'image/webp' and image[8:12] != b'WEBP'):
         raise HTTPException(415, 'Body is not a valid ' + mime)
     if not settings.gemini_api_key: raise HTTPException(503, 'Gemini is not configured')
-    try: ident, sources = await identify_product(bytes(image), mime)
+    try: ident, sources, web_search = await identify_product(bytes(image), mime)
     except Exception: raise HTTPException(502, 'Product identification is unavailable; try again shortly')
-    return {**ident.model_dump(), 'sources': sources, 'catalog_matches': catalog_matches(db, ident) if ident.identified else []}
+    # web_search=false: answered from the model's own knowledge, so prices and retailers may be stale.
+    return {**ident.model_dump(), 'web_search': web_search, 'sources': sources, 'catalog_matches': catalog_matches(db, ident) if ident.identified else []}
