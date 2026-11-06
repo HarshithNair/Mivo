@@ -8,6 +8,7 @@ from backend.db import engine, SessionLocal
 from backend.api.main import app, attempts
 from backend.services.negotiation import validate_price
 from backend.seed import seed
+from backend.config import settings
 @pytest.fixture(autouse=True)
 def database():
     Base.metadata.drop_all(engine); Base.metadata.create_all(engine); attempts.clear(); seed()
@@ -58,7 +59,9 @@ def test_quote(client):
     assert client.post(f'/offers/{oid}/accept').status_code==404
 def test_expiry(client):
     oid,_=make_offer(register(client),True); assert client.post(f'/offers/{oid}/accept').status_code==409
-def test_no_fake_ai(client):
+def test_no_fake_ai(client, monkeypatch):
+    # Force the unconfigured state so the fail-closed guarantee is tested regardless of local .env.
+    monkeypatch.setattr(settings,'gemini_api_key','')
     register(client); p=client.get('/products').json()[0]
     assert client.post('/negotiations',json={'product_id':p['id'],'budget_cents':10000}).status_code==503
     assert client.get('/negotiations').json()==[]

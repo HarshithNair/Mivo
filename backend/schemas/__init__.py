@@ -22,10 +22,10 @@ class StartNegotiation(BaseModel):
     product_id: str
     budget_cents: int = Field(gt=0, le=10000000, strict=True)
 class Proposal(BaseModel):
-    amount_cents: int = Field(gt=0, le=10000000, strict=True)
+    amount_cents: int = Field(ge=1, le=10000000, strict=True)
 class SearchIntent(BaseModel):
     category: str | None = None
-    budget_cents: int | None = Field(default=None, gt=0, le=10000000)
+    budget_cents: int | None = Field(default=None, ge=1, le=10000000)
     keywords: list[str] = Field(default_factory=list, max_length=10)
     brands: list[str] = Field(default_factory=list, max_length=10)
     features: list[str] = Field(default_factory=list, max_length=10)

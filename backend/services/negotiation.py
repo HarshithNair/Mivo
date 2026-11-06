@@ -1,10 +1,13 @@
 import asyncio
+import logging
 from sqlalchemy import select, update, func
 from backend.db import SessionLocal
 from backend.models import Negotiation, Product, Message, Offer, Audit, now
 from backend.agents.gemini import buyer_proposal, merchant_proposal
+from backend.config import settings
 
-MAX_ROUNDS = 4
+MAX_ROUNDS = settings.negotiation_rounds
+log = logging.getLogger('mivo.negotiation')
 
 def validate_price(amount, lower, upper):
     if type(amount) is not int or not lower <= amount <= upper:
@@ -28,7 +31,7 @@ async def run_negotiation(nid):
             for round_no in range(1,MAX_ROUNDS+1):
                 db.refresh(n)
                 if n.status != 'running': return
-                if now()-n.created > 300: raise TimeoutError()
+                if now()-n.created > settings.negotiation_deadline: raise TimeoutError()
                 buyer=await buyer_proposal({'budget_cents':n.budget_cents,'listing_cents':original.price_cents,'round':round_no,'history':history})
                 amount=validate_price(buyer.amount_cents,1,n.budget_cents)
                 db.refresh(n)
@@ -54,6 +57,7 @@ async def run_negotiation(nid):
             append(db,n,'system','Offers are ready for your review. Choose explicitly to accept.' if offers else 'No valid merchant offers were received.')
             db.add(Audit(actor=n.buyer_id,action=n.status,reference=n.id)); db.commit()
         except Exception:
+            log.exception('negotiation %s failed', nid)
             db.rollback(); db.refresh(n)
             if n.status=='running':
                 n.status='failed'; append(db,n,'system','Negotiation could not complete. Please retry; no deal was accepted.'); db.commit()

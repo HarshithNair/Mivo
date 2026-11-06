@@ -6,7 +6,10 @@ class Settings(BaseSettings):
     app_origin: str = 'http://localhost:3000'
     cookie_secure: bool = False
     gemini_api_key: str = ''
-    gemini_model: str = 'gemini-2.5-flash'
+    gemini_model: str = 'gemini-3.1-flash-lite'
+    gemini_rpm: int = 5
+    negotiation_rounds: int = 4
+    negotiation_deadline: int = 600
     payment_enabled: bool = False
     arc_rpc_url: str = 'https://rpc.testnet.arc.io'
     arc_chain_id: int = 5042002
