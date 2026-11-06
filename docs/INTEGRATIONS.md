@@ -11,7 +11,7 @@ Three defects were fixed to get there:
 2. `gemini-2.5-flash` is retired for new API users; the endpoint directs callers to a newer flash model.
 3. Free-tier quota is per-model and per-day, not merely per-minute. `gemini-3.5-flash` (billed as `gemini-3.6-flash`) allows only 20 requests per DAY, while one negotiation costs roughly 16 calls. The default model is now `gemini-3.1-flash-lite`, which carries its own separate free-tier allowance.
 
-`backend/agents/gemini.py` adds a process-wide pacer (`GEMINI_RPM`, default 5) and retries that honour the server's own `RetryInfo.retryDelay` instead of a guessed backoff. Transient 429/5xx are retried; schema and price-bound violations still fail fast. `NEGOTIATION_ROUNDS` and `NEGOTIATION_DEADLINE` are configurable so a demo can trade negotiation depth against quota.
+`backend/agents/gemini.py` adds a process-wide pacer (`GEMINI_RPM`, default 5) and retries that honour the server's own `RetryInfo.retryDelay` instead of a guessed backoff. Transient 429/5xx are retried; schema and price-bound violations still fail fast. `NEGOTIATION_ROUNDS` and `NEGOTIATION_DEADLINE` are configurable so a demo can trade negotiation depth against quota. The default is now **2 rounds**, chosen deliberately for demo practicality: each round costs 1 buyer call plus 1 call per competing merchant, so 2 rounds against 3 merchants is 8 calls instead of 16. Raise it for a deeper negotiation if quota allows.
 
 Quota headroom, not code, is now the limiting factor. Raising it means enabling paid billing on the Google project, which is the user's financial decision and has not been authorized.
 

@@ -19,7 +19,7 @@
 - Frontend build, typecheck and lint all pass clean.
 
 ## External blockers (need the user)
-- **Gemini quota.** The code is correct; free-tier headroom is the limit. One negotiation costs ~16 calls and takes ~3.5 minutes under free-tier pacing. Raising this means enabling paid billing on the Google project — a financial decision that has not been authorized. `NEGOTIATION_ROUNDS` can be lowered instead to fit a demo.
+- **Gemini quota.** The code is correct; free-tier headroom is the limit. At the new 2-round default a negotiation costs 8 calls against 3 merchants (it was 16 at 4 rounds, which measured 213.6s end to end); wall-clock time scales with the `GEMINI_RPM` pacing needed to stay inside quota. Raising this means enabling paid billing on the Google project — a financial decision that has not been authorized. `NEGOTIATION_ROUNDS` now defaults to **2** (8 calls per negotiation) to keep the demo practical on free tier.
 - **Arc funding.** Deployer `0x677f24A555eCA45A85bc1dB1aAbE2EC04fB93553` has a zero balance, so no contract deployment or on-chain settlement is possible. Needs faucet funding (https://faucet.circle.com).
 - **World credentials.** No developer app exists, so `WORLD_CLIENT_ID`/`WORLD_CLIENT_SECRET` are empty and `/world/start` correctly returns 503.
 - **1inch.** Now definitively resolved against official docs: Aqua runs on 13 mainnet chains and **no testnets**, and Arc (5042002) is not one of them. A 1inch conversion settled on Arc is not technically possible. Demonstrating Aqua at all would need a mainnet chain and real funds — an unauthorized financial commitment. Conversion stays disabled.

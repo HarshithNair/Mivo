@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ''
     gemini_model: str = 'gemini-3.1-flash-lite'
     gemini_rpm: int = 5
-    negotiation_rounds: int = 4
+    negotiation_rounds: int = 2
     negotiation_deadline: int = 600
     payment_enabled: bool = False
     arc_rpc_url: str = 'https://rpc.testnet.arc.io'

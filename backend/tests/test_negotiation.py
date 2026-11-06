@@ -14,6 +14,9 @@ def job():
         n=Negotiation(buyer_id=buyer.id,product_id=p.id,budget_cents=14000);db.add(n);db.commit();return n.id
 
 def test_valid_agents_persist_real_events(monkeypatch):
+    # Pin the round count so the expected event total does not drift with configured depth.
+    rounds=4;merchants=3
+    monkeypatch.setattr(service,'MAX_ROUNDS',rounds)
     async def buyer(data):return Proposal(amount_cents=12000)
     async def merchant(data):return Proposal(amount_cents=data['private_floor_cents']+100)
     monkeypatch.setattr(service,'buyer_proposal',buyer);monkeypatch.setattr(service,'merchant_proposal',merchant)
@@ -22,7 +25,7 @@ def test_valid_agents_persist_real_events(monkeypatch):
         assert db.get(Negotiation,nid).status=='completed'
         offers=list(db.scalars(select(Offer)));assert len(offers)==3
         assert all(o.amount_cents>=db.get(Product,o.product_id).floor_cents for o in offers)
-        messages=list(db.scalars(select(Message)));assert len(messages)==17
+        messages=list(db.scalars(select(Message)));assert len(messages)==rounds*(1+merchants)+1
         assert len({m.sequence for m in messages})==len(messages)
     asyncio.run(service.run_negotiation(nid))
     with SessionLocal() as db: assert len(list(db.scalars(select(Offer))))==3
