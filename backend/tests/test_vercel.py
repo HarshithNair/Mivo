@@ -70,3 +70,19 @@ def test_vercel_defaults(monkeypatch):
     s = Settings(_env_file=None, database_url='postgres://u:p@h/db')
     assert s.app_origin == 'https://mivo.vercel.app' and s.cookie_secure
     assert s.sqlalchemy_url == 'postgresql+psycopg://u:p@h/db'
+
+
+def test_same_host_origin_allowed(serverless):
+    # Any domain the project answers on works, as long as Origin matches the request host.
+    h = {'origin': 'https://mivo-team.vercel.app', 'x-forwarded-host': 'mivo-team.vercel.app'}
+    assert serverless.post('/auth/logout', headers=h).status_code == 200
+    h = {'origin': 'https://evil.example', 'x-forwarded-host': 'mivo-team.vercel.app'}
+    assert serverless.post('/auth/logout', headers=h).status_code == 403
+    h = {'origin': 'http://mivo-team.vercel.app', 'x-forwarded-host': 'mivo-team.vercel.app'}
+    assert serverless.post('/auth/logout', headers=h).status_code == 403
+
+
+def test_same_host_rule_is_vercel_only(serverless, monkeypatch):
+    monkeypatch.setattr(settings, 'vercel', False)
+    h = {'origin': 'https://mivo-team.vercel.app', 'x-forwarded-host': 'mivo-team.vercel.app'}
+    assert serverless.post('/auth/logout', headers=h).status_code == 403
