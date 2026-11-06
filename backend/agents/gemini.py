@@ -1,11 +1,12 @@
 import asyncio
 import json
 import logging
+import time
 from google import genai
 from google.genai import types
 from google.genai import errors as genai_errors
 from backend.config import settings
-from backend.schemas import Proposal, SearchIntent, Identification
+from backend.schemas import Proposal, SearchIntent, Identification, DealerCounters
 
 log = logging.getLogger('mivo.gemini')
 
@@ -86,6 +87,9 @@ async def buyer_proposal(data):
     return await structured('You are the buyer agent. Propose a positive integer offer in cents within the buyer budget. Use previous rounds and competing public offers to seek the lowest realistic price.',data,Proposal)
 async def merchant_proposal(data):
     return await structured('You are one merchant agent. Propose a price in integer cents using your private policy, inventory, and buyer offer. Never disclose policy in your output.',data,Proposal)
+async def dealer_counters(data):
+    # One call answers for every dealer in the round instead of one call each.
+    return await structured('You play several independent merchant agents at once. For EACH dealer in `dealers`, decide that dealer\'s counteroffer in integer cents using ONLY that dealer\'s own listing_cents, private_floor_cents, inventory and previous_counter_cents, plus the buyer offer. Dealers do not know about each other. Never go below a dealer\'s private floor or above its listing, and never above its previous counter. Concede more when inventory is high and on the final round. Return one entry per dealer using its `dealer` number.',data,DealerCounters)
 async def search_intent(query):
     return await structured('Extract category, budget in USD cents, brands, features and search keywords. Categories: Headphones, Smartwatches, Laptops, Cameras, Lifestyle, Audio. Use null for unknown category or budget.',{'query':query},SearchIntent)
 
@@ -131,17 +135,25 @@ async def identify_attempt(image, mime_type, search=True):
     return identification, sources[:8]
 
 
+SEARCH_BACKOFF = 600
+search_blocked_until = 0.0
+
+
 async def identify_product(image, mime_type):
     """Returns (identification, sources, web_search_used).
 
     Google Search grounding has its own, much smaller free-tier quota than plain
     generation. When it is exhausted (429), retrying cannot help, so fall back to the
     model's own knowledge and report that no web search was used."""
-    try:
-        identification, sources = await with_retries(lambda: identify_attempt(image, mime_type), TRANSIENT_CODES - {429})
-        return identification, sources, True
-    except genai_errors.APIError as exc:
-        if getattr(exc, 'code', None) != 429: raise
-        log.warning('search grounding quota exhausted; identifying without web search')
+    global search_blocked_until
+    if time.monotonic() >= search_blocked_until:
+        try:
+            identification, sources = await with_retries(lambda: identify_attempt(image, mime_type), TRANSIENT_CODES - {429})
+            return identification, sources, True
+        except genai_errors.APIError as exc:
+            if getattr(exc, 'code', None) != 429: raise
+            # Don't spend a paced call slot on search again until the quota may have recovered.
+            search_blocked_until = time.monotonic() + SEARCH_BACKOFF
+            log.warning('search grounding quota exhausted; identifying without web search for %ds', SEARCH_BACKOFF)
     identification, sources = await with_retries(lambda: identify_attempt(image, mime_type, search=False))
     return identification, sources, False

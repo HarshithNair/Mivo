@@ -71,6 +71,7 @@ def test_falls_back_without_search_when_grounding_quota_is_gone(monkeypatch):
     from google.genai import errors as genai_errors
     from backend.agents import gemini
     monkeypatch.setattr(settings, 'gemini_api_key', 'test')
+    monkeypatch.setattr(gemini, 'search_blocked_until', 0.0)
     async def no_wait(): pass
     monkeypatch.setattr(gemini.pacer, 'wait', no_wait)
     calls = []
@@ -102,7 +103,7 @@ def test_identify_prompt_builds():
 
 
 # ---- ?negotiate=true -------------------------------------------------------------------------
-from backend.schemas import PriceRange, Proposal
+from backend.schemas import PriceRange, Proposal, DealerCounters, DealerCounter
 from backend.services import negotiation as negotiation_service
 from backend.db import SessionLocal
 from backend.models import Product, Negotiation, Offer, User
@@ -120,10 +121,14 @@ def deal(pi, monkeypatch):
         return Identification(identified=True, name='Apple iPhone 15 Pro', brand='Apple', category='Smartphone',
                               price_range_usd=PriceRange(low=800, high=900), confidence=0.95), [], False
     monkeypatch.setattr(device, 'identify_product', fake)
-    async def buyer(data): return Proposal(amount_cents=min(data['budget_cents'], 70000))
-    async def merchant(data): return Proposal(amount_cents=data['private_floor_cents'] + 500)
-    monkeypatch.setattr(negotiation_service, 'buyer_proposal', buyer)
-    monkeypatch.setattr(negotiation_service, 'merchant_proposal', merchant)
+    pi.rounds = []
+    async def counters(data):
+        pi.rounds.append(data)
+        return DealerCounters(counters=[DealerCounter(dealer=d['dealer'], amount_cents=max(d['private_floor_cents'], d['previous_counter_cents'] - 2000)) for d in data['dealers']])
+    async def forbidden(data): raise AssertionError('device negotiations must not make per-agent calls')
+    monkeypatch.setattr(negotiation_service, 'dealer_counters', counters)
+    monkeypatch.setattr(negotiation_service, 'buyer_proposal', forbidden)
+    monkeypatch.setattr(negotiation_service, 'merchant_proposal', forbidden)
     r = pi.post('/auth/register', headers={'origin': 'http://localhost:3000'},
                 json={'email': BUYER, 'name': 'Pi owner', 'password': 'correct-horse-battery', 'role': 'buyer'})
     assert r.status_code == 201
@@ -199,3 +204,52 @@ def test_dealer_prices_stay_in_bounds():
         assert [p.price_cents for p in products] == sorted(p.price_cents for p in products)
         assert all(p.floor_cents < p.price_cents and not p.listed and p.inventory > 0 for p in products)
         db.rollback()
+
+
+
+def test_one_gemini_call_per_round(deal):
+    n = negotiate(deal).json()['negotiation']
+    assert n['status'] == 'completed'
+    assert len(deal.calls) == 1 and len(deal.rounds) == settings.device_rounds  # 1 identify + 1 per round
+    assert deal.rounds[-1]['final_round'] and not deal.rounds[0]['final_round']
+    # Each round's buyer offer is in the prompt; round 2 never goes below round 1.
+    assert deal.rounds[1]['buyer_offer_cents'] >= deal.rounds[0]['buyer_offer_cents']
+
+
+def test_buyer_rule():
+    from backend.services.negotiation import buyer_offer
+    assert buyer_offer(90000, 100000, None, 100000) == 75000          # anchor 75% of cheapest listing
+    assert buyer_offer(90000, 100000, 75000, 85000) == 80000          # halfway toward best counter
+    assert buyer_offer(78000, 100000, 75000, 85000) == 78000          # capped by budget
+    assert buyer_offer(90000, 100000, 80000, 70000) == 80000          # never retreats
+
+
+def test_dealer_counters_are_bounded(deal, monkeypatch):
+    async def counters(data):
+        d = data['dealers']
+        # dealer 0 tries to raise its price, dealer 1 goes below floor, dealer 2 is skipped, junk index ignored
+        return DealerCounters(counters=[DealerCounter(dealer=0, amount_cents=d[0]['previous_counter_cents'] + 5000),
+                                        DealerCounter(dealer=1, amount_cents=d[1]['private_floor_cents'] - 1),
+                                        DealerCounter(dealer=7, amount_cents=50000)])
+    monkeypatch.setattr(negotiation_service, 'dealer_counters', counters)
+    n = negotiate(deal).json()['negotiation']
+    assert n['status'] == 'failed' and n['offers'] == []
+
+
+def test_search_backoff_skips_grounded_attempts(monkeypatch):
+    import asyncio
+    from google.genai import errors as genai_errors
+    from backend.agents import gemini
+    monkeypatch.setattr(settings, 'gemini_api_key', 'test')
+    monkeypatch.setattr(gemini, 'search_blocked_until', 0.0)
+    async def no_wait(): pass
+    monkeypatch.setattr(gemini.pacer, 'wait', no_wait)
+    calls = []
+    async def attempt(image, mime, search=True):
+        calls.append(search)
+        if search: raise genai_errors.ClientError(429, {'error': {'code': 429, 'message': 'quota', 'status': 'RESOURCE_EXHAUSTED'}})
+        return Identification(identified=True, name='Phone'), []
+    monkeypatch.setattr(gemini, 'identify_attempt', attempt)
+    asyncio.run(gemini.identify_product(b'x', 'image/jpeg'))
+    asyncio.run(gemini.identify_product(b'x', 'image/jpeg'))
+    assert calls == [True, False, False]  # second scan goes straight to the no-search call

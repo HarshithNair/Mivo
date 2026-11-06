@@ -26,7 +26,7 @@ TYPES = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.web
 MAX_BYTES = 4 * 1024 * 1024
 RETRY_WAITS = (15, 30)  # for 502 / network errors: two retries
 TIMEOUT = 120
-NEGOTIATE_TIMEOUT = 290  # a negotiation runs ~2-4 minutes on the server
+NEGOTIATE_TIMEOUT = 290  # usually ~40 s; generous because Gemini retries can stretch it
 
 
 class Fatal(Exception):
@@ -136,7 +136,7 @@ def main(argv):
     try:
         path = capture() if args[0] == '--capture' else args[0]
         if not os.path.isfile(path): raise Fatal(f'No such file: {path}', 1)
-        if negotiate: print('Identifying and negotiating; this takes 2-4 minutes…', file=sys.stderr)
+        if negotiate: print('Identifying and negotiating; this usually takes under a minute…', file=sys.stderr)
         result = send(path, url, key, negotiate, budget)
     except Fatal as e:
         print(e, file=sys.stderr); return e.code

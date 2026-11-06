@@ -15,7 +15,7 @@ from backend.db import get_db
 from backend.models import Product, User, Negotiation, Offer, now
 from backend.agents.gemini import identify_product
 from backend.services import dealers
-from backend.services.negotiation import run_negotiation, append
+from backend.services.negotiation import run_device_negotiation, append
 
 router = APIRouter(prefix='/device')
 # Vercel caps request bodies at 4.5 MB; stay under it with headroom.
@@ -68,7 +68,7 @@ async def negotiate(db, request, buyer, ident, budget_usd):
     db.commit()
     # Runs inside this request (serverless functions freeze after responding). Shielded so a
     # dropped device connection does not abandon the negotiation midway.
-    await asyncio.shield(run_negotiation(n.id))
+    await asyncio.shield(run_device_negotiation(n.id, [p.id for p in products]))
     db.expire_all(); n = db.get(Negotiation, n.id)
     by_id = {p.id: p for p in products}
     offers = []
