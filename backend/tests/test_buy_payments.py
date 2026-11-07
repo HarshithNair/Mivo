@@ -55,6 +55,7 @@ def env(monkeypatch):
     monkeypatch.setattr(settings, 'device_buyer_email', BUYER)
     monkeypatch.setattr(ps, 'payment_recipient_address', RECIPIENT)
     monkeypatch.setattr(ps, 'payment_check_interval', 0)
+    monkeypatch.setattr(ps, 'payment_recovery_interval', 0)
     fake = FakeChain()
     monkeypatch.setattr(chain, 'rpc', fake.rpc)
     with TestClient(app) as c:
@@ -296,3 +297,26 @@ def test_arc_dual_transfer_events(env):
     env.chain.receipts[TX]['logs'].insert(0, native)
     env.post(f'/buy-payments/{pid}/submit', headers=ORIGIN, json={'tx_hash': TX})
     assert status(env, pid)['status'] == 'paid'
+
+
+def test_balance_check_retries_once_on_busy_rpc(env, monkeypatch):
+    nid, _ = deal(); pid = buy(env, nid).json()['payment_id']
+    env.chain.balances[PAYER[2:].lower()] = 10 ** 12
+    real, fails = env.chain.rpc, {'n': 0}
+    async def flaky(method, params):
+        if method == 'eth_call' and fails['n'] == 0: fails['n'] += 1; raise chain.RpcError('rate limit exceeded')
+        return await real(method, params)
+    monkeypatch.setattr(chain, 'rpc', flaky)
+    import backend.buy_payments.service as svc
+    async def no_sleep(*_): pass
+    monkeypatch.setattr(svc.asyncio, 'sleep', no_sleep)
+    assert env.post(f'/buy-payments/{pid}/start', headers=ORIGIN, json={'payer_address': PAYER}).json()['status'] == 'awaiting_approval'
+
+
+
+def test_waiting_payments_do_not_hammer_the_rpc(env, monkeypatch):
+    monkeypatch.setattr(ps, 'payment_recovery_interval', 20)
+    nid, _ = deal(); pid = buy(env, nid).json()['payment_id']; approve(env, pid)
+    env.chain.calls.clear()
+    for _ in range(6): status(env, pid)  # Pi + portal polling while the user looks at MetaMask
+    assert env.chain.calls.count('eth_getLogs') <= 1

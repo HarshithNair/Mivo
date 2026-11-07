@@ -16,6 +16,15 @@ const erc20 = parseAbi(['function transfer(address to,uint256 amount) returns (b
 const USDC = '0x3600000000000000000000000000000000000000' as Address; // Arc Testnet USDC ERC-20 interface, 6 decimals
 const FINAL = ['paid', 'failed', 'expired', 'rejected'];
 const PENDING_KEY = 'mivo-buy-pending';
+const AUTO_KEY = 'mivo-auto-approve';
+// Payments this page already opened MetaMask for. Each BUY auto-prompts at most once, so a
+// rejection (or any error) never turns into a prompt loop; the manual button stays available.
+const autoStarted = new Set<string>();
+// Temporary failures BEFORE MetaMask is shown (e.g. the public Arc RPC rate-limits the balance
+// check) may re-arm auto-start a few times. Once MetaMask has prompted, it never auto-retries.
+const autoRetries = new Map<string, number>();
+const MAX_AUTO_RETRIES = 3;
+const isTransient = (e: unknown) => /busy|try again|rate limit|timeout|network/i.test(e instanceof Error ? e.message : String(e ?? ''));
 
 type Payment = {
   id: string; status: string; label: string; reason: string | null; product: string; dealer: string;
@@ -45,7 +54,12 @@ function savePending(map: Record<string, Hex>) {
 
 export function BuyPayments() {
   const qc = useQueryClient();
-  const payments = useQuery({queryKey: ['buy-payments'], queryFn: () => api<Payment[]>('/buy-payments'), refetchInterval: 3000, retry: false});
+  const payments = useQuery({queryKey: ['buy-payments'], queryFn: () => api<Payment[]>('/buy-payments'), refetchInterval: 2000, retry: false});
+  // Auto-start: when a BUY arrives from the Pi, open the MetaMask confirmation immediately.
+  // MetaMask still asks for confirmation; nothing is ever sent without it.
+  const [auto, setAuto] = useState(true);
+  useEffect(() => { try { setAuto(localStorage.getItem(AUTO_KEY) !== 'off'); } catch { /* default on */ } }, []);
+  const toggleAuto = () => setAuto(v => { try { localStorage.setItem(AUTO_KEY, v ? 'off' : 'on'); } catch { /* ignore */ } return !v; });
 
   // If a hash was signed but never reached the backend (tab closed, network drop), report it again.
   useEffect(() => {
@@ -56,18 +70,19 @@ export function BuyPayments() {
   }, []);
 
   const token = payments.data?.[0]?.token_address ?? USDC;
+  const recipient = payments.data?.[0]?.recipient ?? null;
   return (
     <div className={s.page}>
       <div className={s.top}><Link href="/my-deals">← Back to Mivo</Link><span className="pill">ARC TESTNET · USDC</span></div>
-      <div className="page-title"><h1>Payments<span>.</span></h1><p>BUY requests from your Raspberry Pi. Approve each one in MetaMask; it counts only after on-chain verification.</p></div>
+      <div className="page-title"><h1>Payments<span>.</span></h1><p>BUY requests from your Raspberry Pi are paid from your Mivo Buyer wallet to the Mivo Merchant wallet, whichever demo dealer won the deal. MetaMask opens automatically; a payment counts only after on-chain verification.</p></div>
       <div className={s.grid}>
-        <WalletPanel token={token} />
+        <WalletPanel token={token} recipient={recipient} auto={auto} onToggleAuto={toggleAuto} />
         {payments.error ? (
           <div className="panel"><h2>Sign in to see payments</h2><p>Log in with the buyer account linked to your Raspberry Pi.</p><Button asChild><Link href="/login">Sign in</Link></Button></div>
         ) : payments.isLoading ? (
           <div className="panel"><p>Loading payments…</p></div>
         ) : payments.data?.length ? (
-          payments.data.map(p => <PaymentCard key={p.id} p={p} onChange={() => qc.invalidateQueries({queryKey: ['buy-payments']})} />)
+          payments.data.map(p => <PaymentCard key={p.id} p={p} auto={auto} onChange={() => qc.invalidateQueries({queryKey: ['buy-payments']})} />)
         ) : (
           <div className="panel"><h2>No payments yet</h2><p>Scan a product on the Pi, negotiate, then double-press to BUY. The payment request appears here.</p></div>
         )}
@@ -76,7 +91,7 @@ export function BuyPayments() {
   );
 }
 
-function WalletPanel({token}: {token: Address}) {
+function WalletPanel({token, recipient, auto, onToggleAuto}: {token: Address; recipient: Address | null; auto: boolean; onToggleAuto: () => void}) {
   const {address, chainId, isConnected} = useAccount();
   const {connect, connectors, isPending, error} = useConnect();
   const {disconnect} = useDisconnect();
@@ -87,11 +102,15 @@ function WalletPanel({token}: {token: Address}) {
     queryFn: () => client!.readContract({address: token, abi: erc20, functionName: 'balanceOf', args: [address!]}),
   });
   const onArc = chainId === arc.id;
+  const isMerchant = !!address && !!recipient && address.toLowerCase() === recipient.toLowerCase();
+  const ready = isConnected && onArc && !isMerchant;
   return (
     <div className={`panel ${s.wallet}`}>
       <h2 style={{margin: 0}}>MetaMask</h2>
       <div className={s.row}><span>Connected wallet</span><b className={s.mono}>{isConnected ? address : 'Not connected'}</b></div>
       <div className={s.row}><span>Network</span><b>{!isConnected ? '—' : onArc ? `Arc Testnet (${arc.id})` : `Wrong network (chain ${chainId})`}</b></div>
+      <div className={s.row}><span>Pays to</span><b className={s.mono}>{recipient ? `Mivo Merchant · ${recipient}` : 'Mivo Merchant (set on the server)'}</b></div>
+      <div className={s.row}><span>Auto-start on BUY</span><b>{!auto ? 'Off: approve each payment below' : ready ? 'On: ready, MetaMask opens when the Pi sends BUY' : 'On: connect MetaMask (Mivo Buyer) on Arc Testnet to be ready'}</b></div>
       <div className={s.row}><span>USDC balance</span><b>{!isConnected ? '—' : balance.data !== undefined ? `${formatUnits(balance.data, 6)} USDC` : balance.isError ? 'Could not read' : '…'}</b></div>
       <div className={s.actions}>
         {!isConnected ? (
@@ -102,15 +121,18 @@ function WalletPanel({token}: {token: Address}) {
             <Button variant="ghost" onClick={() => disconnect()}>Disconnect</Button>
           </>
         )}
+        <Button variant="outline" onClick={onToggleAuto}>{auto ? 'Turn auto-start off' : 'Turn auto-start on'}</Button>
       </div>
+      {isMerchant && <p className={`${s.status} ${s.warn}`} role="alert">MetaMask is on the Mivo Merchant account (the recipient). Switch MetaMask to your Mivo Buyer account to pay.</p>}
       {(error || switchError) && <p className={`${s.status} ${s.warn}`} role="alert">{friendlyError(error ?? switchError)}</p>}
       <p className={s.status} style={{color: 'var(--muted)'}}>Need testnet USDC? Use the official Circle faucet at <a href="https://faucet.circle.com/" target="_blank" rel="noreferrer">faucet.circle.com</a> and choose Arc Testnet.</p>
     </div>
   );
 }
 
-function PaymentCard({p, onChange}: {p: Payment; onChange: () => void}) {
+function PaymentCard({p, auto, onChange}: {p: Payment; auto: boolean; onChange: () => void}) {
   const {address, chainId} = useAccount();
+  const {switchChain} = useSwitchChain();
   const client = usePublicClient({chainId: arc.id});
   const {data: wallet} = useWalletClient();
   const [busy, setBusy] = useState(false);
@@ -121,12 +143,25 @@ function PaymentCard({p, onChange}: {p: Payment; onChange: () => void}) {
   const final = FINAL.includes(p.status);
   const canPay = (p.status === 'pending' || p.status === 'awaiting_approval') && !p.tx_hash && p.expires > nowS;
   const left = Math.max(0, p.expires - nowS);
+  const fromMerchant = !!address && address.toLowerCase() === p.recipient.toLowerCase();
+
+  // A new BUY arrived: start paying right away (MetaMask still shows its confirmation).
+  useEffect(() => {
+    if (!auto || busy || p.status !== 'pending' || p.tx_hash || p.expires <= nowS || !address || fromMerchant || autoStarted.has(p.id)) return;
+    if (chainId !== arc.id) { switchChain({chainId: arc.id}); return; } // re-runs once MetaMask is on Arc
+    if (!wallet || !client) return; // re-runs when the wallet client is ready
+    autoStarted.add(p.id);
+    void pay();
+    // pay() is recreated each render; the guards above make this fire once per payment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto, busy, p.status, p.tx_hash, p.id, address, chainId, wallet, client, fromMerchant]);
 
   async function pay() {
     if (!address) return setMessage('Connect MetaMask first.');
     if (chainId !== arc.id) return setMessage('Switch MetaMask to Arc Testnet first.');
     if (!wallet || !client) return setMessage('Wallet is not ready yet; try again in a moment.');
     setBusy(true);
+    let prompted = false;
     try {
       setMessage('Checking your USDC balance on Arc Testnet…');
       await api(`/buy-payments/${p.id}/start`, {payer_address: address}); // backend reads the balance on-chain
@@ -144,6 +179,7 @@ function PaymentCard({p, onChange}: {p: Payment; onChange: () => void}) {
         return;
       }
       setMessage('Approve the payment in MetaMask…');
+      prompted = true;
       let hash: Hex;
       try {
         hash = await wallet.sendTransaction({account: address, chain: arc, to: p.token_address, data, gas: gas * 12n / 10n});
@@ -160,7 +196,14 @@ function PaymentCard({p, onChange}: {p: Payment; onChange: () => void}) {
       await api(`/buy-payments/${p.id}/submit`, {tx_hash: hash});
       delete pending[p.id]; savePending(pending);
     } catch (e) {
-      setMessage(friendlyError(e));
+      const tries = autoRetries.get(p.id) ?? 0;
+      if (!prompted && autoStarted.has(p.id) && isTransient(e) && tries < MAX_AUTO_RETRIES) {
+        autoRetries.set(p.id, tries + 1);
+        setMessage(`Arc Testnet is busy; retrying automatically (${tries + 1}/${MAX_AUTO_RETRIES})…`);
+        setTimeout(() => autoStarted.delete(p.id), 3000 * (tries + 1)); // re-arms the auto-start effect
+      } else {
+        setMessage(friendlyError(e));
+      }
     } finally {
       setBusy(false);
       onChange();
@@ -181,9 +224,10 @@ function PaymentCard({p, onChange}: {p: Payment; onChange: () => void}) {
 
       <div style={{marginTop: 12}}>
         <div className={s.row}><span>Product</span><b>{p.product}</b></div>
+        <div className={s.row}><span>Deal won by</span><b>{p.dealer} (demo; paid to Mivo Merchant)</b></div>
         <div className={s.row}><span>Amount</span><b>{p.amount_usdc} USDC</b></div>
         <div className={s.row}><span>Paying wallet</span><b className={s.mono}>{p.payer ?? address ?? 'Connect MetaMask'}</b></div>
-        <div className={s.row}><span>Recipient (merchant)</span><b className={s.mono}>{p.recipient}</b></div>
+        <div className={s.row}><span>Recipient</span><b className={s.mono}>Mivo Merchant · {p.recipient}</b></div>
         <div className={s.row}><span>Status</span><b>{p.label}{p.block_number ? ` · block ${p.block_number}` : ''}</b></div>
         <div className={s.row}><span>Transaction hash</span><b className={s.mono}>{p.tx_hash ?? '—'}</b></div>
         <div className={s.row}><span>Explorer</span><b>{p.explorer_url ? <a href={p.explorer_url} target="_blank" rel="noreferrer">View on Arc Testnet Explorer ↗</a> : '—'}</b></div>

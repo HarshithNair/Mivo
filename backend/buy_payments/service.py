@@ -2,6 +2,7 @@
 
 Only `refresh()` can set PAID, and only after chain.verify() checked the transaction on-chain.
 """
+import asyncio
 import json
 import logging
 from eth_utils import is_address, to_checksum_address
@@ -130,10 +131,14 @@ async def start(db, p, payer):
     if p.expires <= now(): set_status(p, EXPIRED, 'Not approved within the payment window'); db.commit(); raise HTTPException(410, p.reason)
     payer = to_checksum_address(payer)
     if payer.lower() == p.recipient_address.lower(): raise HTTPException(409, 'Pay from your buyer wallet, not the merchant (recipient) wallet')
-    try:
-        balance = await chain.token_balance(p.token_address, payer)
-        head = await chain.head_block()
-    except chain.RpcError: raise HTTPException(503, 'Arc Testnet RPC is busy; try again in a few seconds')
+    for attempt in range(2):  # the public RPC rate-limits bursts; one short retry clears most of them
+        try:
+            balance = await chain.token_balance(p.token_address, payer)
+            head = await chain.head_block()
+            break
+        except chain.RpcError:
+            if attempt: raise HTTPException(503, 'Arc Testnet RPC is busy; try again in a few seconds')
+            await asyncio.sleep(1.5)
     if balance < int(p.token_amount):
         set_status(p, FAILED, f'Insufficient USDC balance: wallet has {balance / 10 ** ps.payment_token_decimals:,.6f}, '
                               f'needs {int(p.token_amount) / 10 ** ps.payment_token_decimals:,.6f}')
@@ -175,7 +180,12 @@ async def refresh(db, p, force=False):
     """Advance a payment using the chain as the source of truth. Safe to call on every poll."""
     if p.status not in ACTIVE: return p
     t = now()
-    if not force and t - (p.last_checked or 0) < ps.payment_check_interval: return p
+    # Fast checks only once a transaction exists; before that there is nothing to verify on-chain.
+    interval = ps.payment_check_interval if p.status in (SUBMITTED, CONFIRMING) else ps.payment_recovery_interval
+    if not force and t - (p.last_checked or 0) < interval:
+        if p.status in (PENDING, AWAITING) and p.expires <= t:
+            set_status(p, EXPIRED, 'Not approved in MetaMask within the payment window'); db.commit()
+        return p
     p.last_checked = t
     try:
         if p.status in (PENDING, AWAITING):
