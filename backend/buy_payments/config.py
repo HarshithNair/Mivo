@@ -22,6 +22,9 @@ class PaymentSettings(BaseSettings):
     payment_tx_timeout: int = 600
     # Minimum seconds between on-chain checks of one payment (the public RPC rate-limits).
     payment_check_interval: int = 4
+    # Before a hash is reported, scanning for a lost transaction (eth_getLogs) is only a safety net;
+    # doing it on every poll rate-limits the public RPC, so space it out.
+    payment_recovery_interval: int = 20
 
 
 payment_settings = PaymentSettings()
